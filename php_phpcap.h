@@ -44,9 +44,14 @@ extern zend_module_entry phpcap_module_entry;
 
 #define PHPCAP_RES_NAME "Pcap Resource"
 
+#define PHPCAP_DEV_PROMISC 1L
+#define PHPCAP_DEV_RFMON 2L
+
+#define PHPCAP_FETCH_RSRC(rsrc) ZEND_FETCH_RESOURCE(phpcap, phpcap_t *, &(rsrc), -1, PHPCAP_RES_NAME, le_phpcap);
+
 typedef struct _phpcap_t {
 	pcap_t *pcap_dev;
-	short started;
+	long options;
 } phpcap_t;
 
 static void pcap_dispatch_cb(u_char *useless, const struct pcap_pkthdr * header, const u_char* packet);
@@ -54,10 +59,7 @@ static void phpcap_rsrc_dtor(zend_rsrc_list_entry *rsrc);
 
 PHP_FUNCTION(phpcap_findalldevs);
 PHP_FUNCTION(phpcap_create);
-PHP_FUNCTION(phpcap_set_promisc);
-PHP_FUNCTION(phpcap_set_rfmon);
-PHP_FUNCTION(phpcap_can_set_rfmon);
-PHP_FUNCTION(phpcap_list_datalinks);
+PHP_FUNCTION(phpcap_dispatch);
 
 /* 
   	Declare any global variables you may need between the BEGIN

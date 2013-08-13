@@ -44,14 +44,35 @@ PHP_INI_END()
 */
 /* }}} */
 
-static void pcap_dispatch_cb(u_char *useless, const struct pcap_pkthdr *header, const u_char *packet)
-{
-	php_printf("got a packet ==> ");
-	struct ether_header *cap_ether_header;
+ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_create, 0, 0, 1)
+	ZEND_ARG_INFO(0, iface)
+	ZEND_ARG_INFO(0, options)
+ZEND_END_ARG_INFO()
+ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_dispatch, 0, 0, 2)
+	ZEND_ARG_INFO(0, rsrc)
+	ZEND_ARG_INFO(0, callback)
+	ZEND_ARG_INFO(0, num_packets)
+ZEND_END_ARG_INFO()
+ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_close, 0, 0, 1)
+	ZEND_ARG_INFO(0, rsrc)
+ZEND_END_ARG_INFO()
 
-	cap_ether_header = (struct ether_header *)packet;
-	php_printf("src addr: %s\n", ether_ntoa(cap_ether_header->ether_dhost));
+static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, const u_char *packet)
+{
+	zend_fcall_info fci = *(zend_fcall_info *)cargs;
+	zend_fcall_info_cache fcic = *(zend_fcall_info_cache *)(cargs+sizeof(zend_fcall_info));
+
+	zend_call_function(&fci, &fcic);
 }
+
+//static void pcap_dispatch_cb(u_char *useless, const struct pcap_pkthdr *header, const u_char *packet)
+//{
+//	php_printf("got a packet ==> ");
+//	struct ether_header *cap_ether_header;
+//
+//	cap_ether_header = (struct ether_header *)packet;
+//	php_printf("src addr: %s\n", ether_ntoa(cap_ether_header->ether_dhost));
+//}
 
 static void phpcap_rsrc_dtor(zend_rsrc_list_entry *rsrc)
 {
@@ -63,6 +84,20 @@ static void phpcap_rsrc_dtor(zend_rsrc_list_entry *rsrc)
 	}
 }
 
+PHP_FUNCTION(phpcap_close)
+{
+	zval *rsrc       = NULL;
+	phpcap_t *phpcap = NULL;
+
+	if(zend_parse_parameters(ZEND_NUM_ARGS(), "r", &rsrc) == FAILURE) {
+		return;
+	}
+
+	PHPCAP_FETCH_RSRC(rsrc);
+
+	zend_list_delete(Z_LVAL_P(rsrc));
+}
+
 PHP_FUNCTION(phpcap_create)
 {
 	char *iface = NULL;
@@ -70,8 +105,9 @@ PHP_FUNCTION(phpcap_create)
 	pcap_t *pcap_dev = NULL;
 	phpcap_t *phpcap = NULL;
 	char pcap_errbuf[PCAP_ERRBUF_SIZE];
+	long options = 0;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS(), "s", &iface, &iface_len) ==  FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "s|l", &iface, &iface_len, &options) ==  FAILURE) {
 		return;
 	}
 
@@ -82,33 +118,62 @@ PHP_FUNCTION(phpcap_create)
 		return;
 	}
 
+	if(options & PHPCAP_DEV_RFMON) {
+		/* use pcap_can_set_rfmon(); to probe ? */
+		pcap_set_rfmon(pcap_dev, 1);
+	}
+	if(options & PHPCAP_DEV_PROMISC) {
+		pcap_set_promisc(pcap_dev, 1);
+	}
+
+	//pcap_set_buffer_size(pcap_dev, 65535);
+	pcap_set_timeout(pcap_dev, 1000);
+
+	if (pcap_activate(pcap_dev)) {
+		php_error(E_WARNING, pcap_geterr(pcap_dev));
+		return;
+	}
+
+	if (pcap_set_datalink(pcap_dev, DLT_EN10MB)) {
+		php_error(E_WARNING, "The device %s does not support Ethernet", iface);
+		return;
+	}
+
 	phpcap = (phpcap_t *) emalloc(sizeof(phpcap_t));
 	phpcap->pcap_dev  = pcap_dev;
-	phpcap->started   = 0;
+	phpcap->options   = options;
 
 	ZEND_REGISTER_RESOURCE(return_value, phpcap, le_phpcap);
 }
 
-//PHP_FUNCTION(pcap_test)
-//{
-//	pcap_t *pcap_handle;
-//	char pcap_errbuf[PCAP_ERRBUF_SIZE];
-//
-//	pcap_handle = pcap_open_live("eth0", BUFSIZ, 0, 1000, pcap_errbuf);
-//	if (pcap_handle == NULL) {
-//		php_error(E_WARNING, "Cannot open eth0 : %s", pcap_errbuf);
-//		RETURN_NULL();
-//	}
-//
-//	if (pcap_datalink(pcap_handle) != DLT_EN10MB) {
-//		php_error(E_WARNING, "Only Ethernet is supported");
-//		RETURN_NULL();
-//	}
-//
-//	//pcap_dispatch(pcap_handle, -1, pcap_dispatch_cb, pcap_errbuf);
-//	pcap_loop(pcap_handle, -1, pcap_dispatch_cb, pcap_errbuf);
-//
-//}
+PHP_FUNCTION(phpcap_dispatch)
+{
+	zend_fcall_info fci        = empty_fcall_info;
+	zend_fcall_info_cache fcic = empty_fcall_info_cache;
+	zval *rsrc       = NULL;
+	phpcap_t *phpcap = NULL;
+	long num_packets = -1;
+	zval *cbresult   = NULL;
+
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "rf|l", &rsrc, &fci, &fcic, &num_packets) == FAILURE) {
+		return;
+	}
+
+	PHPCAP_FETCH_RSRC(rsrc);
+
+	u_char *args = emalloc(sizeof(zend_fcall_info) + sizeof(zend_fcall_info_cache));
+
+	MAKE_STD_ZVAL(cbresult);
+	fci.retval_ptr_ptr = &cbresult;
+
+	memcpy(args, &fci, sizeof(zend_fcall_info));
+	memcpy(args + sizeof(zend_fcall_info), &fcic, sizeof(zend_fcall_info_cache));
+
+	pcap_loop(phpcap->pcap_dev, num_packets, pcap_dispatch_cb, args);
+	zval_ptr_dtor(&cbresult);
+	efree(args);
+}
 
 PHP_FUNCTION(phpcap_findalldevs)
 {
@@ -174,6 +239,9 @@ PHP_MINIT_FUNCTION(phpcap)
 
 	le_phpcap = zend_register_list_destructors_ex(phpcap_rsrc_dtor, NULL, PHPCAP_RES_NAME, module_number);
 
+	REGISTER_LONG_CONSTANT("PHPCAP_DEV_PROMISC", PHPCAP_DEV_PROMISC, CONST_PERSISTENT | CONST_CS);
+	REGISTER_LONG_CONSTANT("PHPCAP_DEV_RFMON", PHPCAP_DEV_RFMON, CONST_PERSISTENT | CONST_CS);
+
 	return SUCCESS;
 }
 /* }}} */
@@ -226,8 +294,10 @@ PHP_MINFO_FUNCTION(phpcap)
  * Every user visible function must have an entry in pcap_functions[].
  */
 const zend_function_entry phpcap_functions[] = {
-	PHP_FE(phpcap_create,	NULL)		/* For testing, remove later. */
+	PHP_FE(phpcap_create,	arginfo_phpcap_create)		/* For testing, remove later. */
 	PHP_FE(phpcap_findalldevs,	NULL)
+	PHP_FE(phpcap_dispatch,	arginfo_phpcap_dispatch)
+	PHP_FE(phpcap_close,	arginfo_phpcap_close)
 	PHP_FE_END	/* Must be the last line in pcap_functions[] */
 };
 /* }}} */
