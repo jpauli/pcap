@@ -65,21 +65,23 @@ static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, co
 	memcpy(&fci, cargs, sizeof(fci));
 	memcpy(&fcic, cargs + sizeof(fci), sizeof(fcic));
 
+	zval *param_packet = NULL;
+	MAKE_STD_ZVAL(param_packet);
+	ZVAL_STRINGL(param_packet, packet, header->len, 1);
+
+	zval ***params = emalloc(sizeof(zval **));
+	*params = &param_packet;
+	fci->params = params;
+	fci->param_count = 1;
+
 	zend_call_function(fci, fcic);
 
 	if(fci->retval_ptr_ptr) {
 		zval_ptr_dtor(fci->retval_ptr_ptr);
 	}
+	zval_ptr_dtor(&param_packet);
+	efree(params);
 }
-
-//static void pcap_dispatch_cb(u_char *useless, const struct pcap_pkthdr *header, const u_char *packet)
-//{
-//	php_printf("got a packet ==> ");
-//	struct ether_header *cap_ether_header;
-//
-//	cap_ether_header = (struct ether_header *)packet;
-//	php_printf("src addr: %s\n", ether_ntoa(cap_ether_header->ether_dhost));
-//}
 
 static void phpcap_rsrc_dtor(zend_rsrc_list_entry *rsrc)
 {
@@ -172,7 +174,6 @@ PHP_FUNCTION(phpcap_dispatch)
 	u_char *args = emalloc(sizeof(zend_fcall_info *) + sizeof(zend_fcall_info_cache *));
 
 	fci->retval_ptr_ptr = &cbresult;
-	fci->param_count = 0;
 	fci->size = sizeof(*fci);
 
 	memcpy(args, &fci, sizeof(zend_fcall_info *));
