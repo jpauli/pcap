@@ -10,9 +10,13 @@ Example:
 
 $r = phpcap_create('eth0', PHPCAP_DEV_PROMISC);
 
-/* Displaying Ethernet headers */
-phpcap_dispatch($r, function($packet) { var_dump( unpack('H12dest/H12src/H4type',$packet) );}, 30 );
+/* Displaying Ethernet & IP headers */
+phpcap_dispatch($r, function($packet) { var_dump( unpack('H12macdest/H12macsrc/H4ethtype/H24/a4ipsrc/a4ipdest',$packet) );}, 30 );
 
+/* Ethernet headers are available as second callback argument */
+phpcap_dispatch($r, function($packet, $eth) { var_dump($eth); }, 30 );
+
+phpcap_close($r);
 ```
 
 Few notes :
