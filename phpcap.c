@@ -59,10 +59,17 @@ ZEND_END_ARG_INFO()
 
 static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, const u_char *packet)
 {
-	zend_fcall_info fci = *(zend_fcall_info *)cargs;
-	zend_fcall_info_cache fcic = *(zend_fcall_info_cache *)(cargs+sizeof(zend_fcall_info));
+	zend_fcall_info *fci        = NULL;
+	zend_fcall_info_cache *fcic = NULL;
 
-	zend_call_function(&fci, &fcic);
+	memcpy(&fci, cargs, sizeof(fci));
+	memcpy(&fcic, cargs + sizeof(fci), sizeof(fcic));
+
+	zend_call_function(fci, fcic);
+
+	if(fci->retval_ptr_ptr) {
+		zval_ptr_dtor(fci->retval_ptr_ptr);
+	}
 }
 
 //static void pcap_dispatch_cb(u_char *useless, const struct pcap_pkthdr *header, const u_char *packet)
@@ -148,31 +155,34 @@ PHP_FUNCTION(phpcap_create)
 
 PHP_FUNCTION(phpcap_dispatch)
 {
-	zend_fcall_info fci        = empty_fcall_info;
-	zend_fcall_info_cache fcic = empty_fcall_info_cache;
+	zend_fcall_info *fci        = emalloc(sizeof(*fci));
+	zend_fcall_info_cache *fcic = emalloc(sizeof(*fcic));
 	zval *rsrc       = NULL;
 	phpcap_t *phpcap = NULL;
 	long num_packets = -1;
 	zval *cbresult   = NULL;
 
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS(), "rf|l", &rsrc, &fci, &fcic, &num_packets) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "rf|l", &rsrc, fci, fcic, &num_packets) == FAILURE) {
 		return;
 	}
 
 	PHPCAP_FETCH_RSRC(rsrc);
 
-	u_char *args = emalloc(sizeof(zend_fcall_info) + sizeof(zend_fcall_info_cache));
+	u_char *args = emalloc(sizeof(zend_fcall_info *) + sizeof(zend_fcall_info_cache *));
 
-	MAKE_STD_ZVAL(cbresult);
-	fci.retval_ptr_ptr = &cbresult;
+	fci->retval_ptr_ptr = &cbresult;
+	fci->param_count = 0;
+	fci->size = sizeof(*fci);
 
-	memcpy(args, &fci, sizeof(zend_fcall_info));
-	memcpy(args + sizeof(zend_fcall_info), &fcic, sizeof(zend_fcall_info_cache));
+	memcpy(args, &fci, sizeof(zend_fcall_info *));
+	memcpy(args + sizeof(zend_fcall_info *), &fcic, sizeof(zend_fcall_info_cache *));
 
 	pcap_loop(phpcap->pcap_dev, num_packets, pcap_dispatch_cb, args);
-	zval_ptr_dtor(&cbresult);
+
 	efree(args);
+	efree(fci);
+	efree(fcic);
 }
 
 PHP_FUNCTION(phpcap_findalldevs)
