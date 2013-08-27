@@ -24,8 +24,9 @@
 #include <pcap.h>
 #include <net/ethernet.h>
 #include <netinet/ether.h>
-#include <sys/socket.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
 
 extern zend_module_entry phpcap_module_entry;
 #define phpext_pcap_ptr &phpcap_module_entry
@@ -53,6 +54,9 @@ typedef struct _phpcap_t {
 	pcap_t *pcap_dev;
 	long options;
 } phpcap_t;
+
+typedef struct ether_header ether_header;
+typedef struct ip ip_header;
 
 static void pcap_dispatch_cb(u_char *useless, const struct pcap_pkthdr * header, const u_char* packet);
 static void phpcap_rsrc_dtor(zend_rsrc_list_entry *rsrc);

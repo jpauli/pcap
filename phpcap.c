@@ -61,38 +61,30 @@ static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, co
 {
 	zend_fcall_info *fci        = NULL;
 	zend_fcall_info_cache *fcic = NULL;
-	zval *param_packet, *param_header_eth = NULL;
-	struct ether_header *ethernet = NULL;
-	unsigned char ether_shost[12], ether_dhost[12];
+	zval *param_packet, *param_cap = NULL;
+
+	ether_header *ethernet = NULL;
+	ip_header *ip          = NULL;
+	char out[40];
 
 	memcpy(&fci, cargs, sizeof(fci));
 	memcpy(&fcic, cargs + sizeof(fci), sizeof(fcic));
-	MAKE_STD_ZVAL(param_packet);MAKE_STD_ZVAL(param_header_eth);
+	MAKE_STD_ZVAL(param_packet);MAKE_STD_ZVAL(param_cap);
 	ZVAL_STRINGL(param_packet, packet, header->len, 1);
-	array_init(param_header_eth);
-	ethernet = (struct ether_header *)packet;
+	array_init(param_cap);
 
-	sprintf(ether_shost, "%02x%02x%02x%02x%02x%02x", ethernet->ether_shost[0],
-													ethernet->ether_shost[1],
-													ethernet->ether_shost[2],
-													ethernet->ether_shost[3],
-													ethernet->ether_shost[4],
-													ethernet->ether_shost[5]);
-	sprintf(ether_dhost, "%02x%02x%02x%02x%02x%02x", ethernet->ether_dhost[0],
-														ethernet->ether_dhost[1],
-														ethernet->ether_dhost[2],
-														ethernet->ether_dhost[3],
-														ethernet->ether_dhost[4],
-														ethernet->ether_dhost[5]);
-	ether_shost[12] = '\0';
-	ether_dhost[12] = '\0';
+	ethernet = (ether_header *)packet;
+	ip       = (ip_header *)packet+sizeof(ether_header);
 
-	add_assoc_stringl_ex(param_header_eth, "shost", sizeof("shost"), ether_shost, 12, 1);
-	add_assoc_stringl_ex(param_header_eth, "dhost", sizeof("dhost"), ether_dhost, 12, 1);
+	add_assoc_string(param_cap, "source_host", ether_ntoa((const struct ether_addr *)ethernet->ether_shost), 1);
+	add_assoc_string(param_cap, "destination_host", ether_ntoa((const struct ether_addr *)ethernet->ether_dhost), 1);
+
+	add_assoc_string(param_cap, "destination_ip", (char*)inet_ntop(AF_INET, &ip->ip_dst, out, sizeof(out)), 1);
+	add_assoc_string(param_cap, "source_ip", (char*)inet_ntop(AF_INET, &ip->ip_src, out, sizeof(out)), 1);
 
 	zval ***params = emalloc(2 * sizeof(zval **));
 	params[0] = &param_packet;
-	params[1] = &param_header_eth;
+	params[1] = &param_cap;
 
 	fci->params = params;
 	fci->param_count = 2;
@@ -103,7 +95,7 @@ static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, co
 		zval_ptr_dtor(fci->retval_ptr_ptr);
 	}
 	zval_ptr_dtor(&param_packet);
-	zval_ptr_dtor(&param_header_eth);
+	zval_ptr_dtor(&param_cap);
 	efree(params);
 }
 
