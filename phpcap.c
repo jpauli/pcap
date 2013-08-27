@@ -87,8 +87,8 @@ static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, co
 	ether_shost[12] = '\0';
 	ether_dhost[12] = '\0';
 
-	add_assoc_stringl_ex(param_header_eth, "shost", sizeof("shost"), ether_shost, 12, 0);
-	add_assoc_stringl_ex(param_header_eth, "dhost", sizeof("dhost"), ether_dhost, 12, 0);
+	add_assoc_stringl_ex(param_header_eth, "shost", sizeof("shost"), ether_shost, 12, 1);
+	add_assoc_stringl_ex(param_header_eth, "dhost", sizeof("dhost"), ether_dhost, 12, 1);
 
 	zval ***params = emalloc(2 * sizeof(zval **));
 	params[0] = &param_packet;
@@ -103,6 +103,7 @@ static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, co
 		zval_ptr_dtor(fci->retval_ptr_ptr);
 	}
 	zval_ptr_dtor(&param_packet);
+	zval_ptr_dtor(&param_header_eth);
 	efree(params);
 }
 
@@ -158,7 +159,6 @@ PHP_FUNCTION(phpcap_create)
 		pcap_set_promisc(pcap_dev, 1);
 	}
 
-	//pcap_set_buffer_size(pcap_dev, 65535);
 	pcap_set_timeout(pcap_dev, 1000);
 
 	if (pcap_activate(pcap_dev)) {
@@ -252,7 +252,6 @@ PHP_FUNCTION(phpcap_findalldevs)
    function definition, where the functions purpose is also documented. Please 
    follow this convention for the convenience of others editing your code.
 */
-
 
 /* {{{ php_pcap_init_globals
  */
