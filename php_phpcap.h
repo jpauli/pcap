@@ -63,7 +63,11 @@ static void phpcap_rsrc_dtor(zend_rsrc_list_entry *rsrc);
 
 PHP_FUNCTION(phpcap_findalldevs);
 PHP_FUNCTION(phpcap_create);
+PHP_FUNCTION(phpcap_close);
 PHP_FUNCTION(phpcap_dispatch);
+PHP_FUNCTION(phpcap_stats);
+PHP_FUNCTION(phpcap_dispatch_break);
+PHP_FUNCTION(phpcap_set_direction);
 
 /* 
   	Declare any global variables you may need between the BEGIN

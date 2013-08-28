@@ -56,6 +56,16 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_close, 0, 0, 1)
 	ZEND_ARG_INFO(0, rsrc)
 ZEND_END_ARG_INFO()
+ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_set_direction, 0, 0, 2)
+	ZEND_ARG_INFO(0, rsrc)
+	ZEND_ARG_INFO(0, direction)
+ZEND_END_ARG_INFO()
+ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_stats, 0, 0, 1)
+	ZEND_ARG_INFO(0, rsrc)
+ZEND_END_ARG_INFO()
+ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_dispatch_break, 0, 0, 1)
+	ZEND_ARG_INFO(0, rsrc)
+ZEND_END_ARG_INFO()
 
 static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, const u_char *packet)
 {
@@ -76,11 +86,16 @@ static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, co
 	ethernet = (ether_header *)packet;
 	ip       = (ip_header *)packet+sizeof(ether_header);
 
+	char type[7];
+	snprintf(type, sizeof(type), "0x%x", ntohs(ethernet->ether_type));
+	add_assoc_string(param_cap, "ether_type", type, 1);
 	add_assoc_string(param_cap, "source_host", ether_ntoa((const struct ether_addr *)ethernet->ether_shost), 1);
 	add_assoc_string(param_cap, "destination_host", ether_ntoa((const struct ether_addr *)ethernet->ether_dhost), 1);
 
-	add_assoc_string(param_cap, "destination_ip", (char*)inet_ntop(AF_INET, &ip->ip_dst, out, sizeof(out)), 1);
-	add_assoc_string(param_cap, "source_ip", (char*)inet_ntop(AF_INET, &ip->ip_src, out, sizeof(out)), 1);
+	if(ntohs(ethernet->ether_type) == ETHERTYPE_IP) {
+		add_assoc_string(param_cap, "destination_ip", (char*)inet_ntop(AF_INET, &ip->ip_dst, out, sizeof(out)), 1);
+		add_assoc_string(param_cap, "source_ip", (char*)inet_ntop(AF_INET, &ip->ip_src, out, sizeof(out)), 1);
+	}
 
 	zval ***params = emalloc(2 * sizeof(zval **));
 	params[0] = &param_packet;
@@ -154,7 +169,7 @@ PHP_FUNCTION(phpcap_create)
 	pcap_set_timeout(pcap_dev, 1000);
 
 	if (pcap_activate(pcap_dev)) {
-		php_error(E_WARNING, pcap_geterr(pcap_dev));
+		php_error(E_WARNING, "Could not activate the device");
 		return;
 	}
 
@@ -172,13 +187,12 @@ PHP_FUNCTION(phpcap_create)
 
 PHP_FUNCTION(phpcap_dispatch)
 {
-	zend_fcall_info *fci        = emalloc(sizeof(*fci));
-	zend_fcall_info_cache *fcic = emalloc(sizeof(*fcic));
+	zend_fcall_info *fci        = (zend_fcall_info *)emalloc(sizeof(*fci));
+	zend_fcall_info_cache *fcic = (zend_fcall_info_cache *)emalloc(sizeof(*fcic));
 	zval *rsrc       = NULL;
 	phpcap_t *phpcap = NULL;
 	long num_packets = -1;
 	zval *cbresult   = NULL;
-
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS(), "rf|l", &rsrc, fci, fcic, &num_packets) == FAILURE) {
 		efree(fci);
@@ -196,11 +210,65 @@ PHP_FUNCTION(phpcap_dispatch)
 	memcpy(args, &fci, sizeof(zend_fcall_info *));
 	memcpy(args + sizeof(zend_fcall_info *), &fcic, sizeof(zend_fcall_info_cache *));
 
-	pcap_loop(phpcap->pcap_dev, num_packets, pcap_dispatch_cb, args);
+	RETVAL_BOOL(pcap_loop(phpcap->pcap_dev, num_packets, pcap_dispatch_cb, args));
 
 	efree(args);
 	efree(fci);
 	efree(fcic);
+}
+
+PHP_FUNCTION(phpcap_stats)
+{
+	zval *rsrc       = NULL;
+	phpcap_t *phpcap = NULL;
+	struct pcap_stat stats;
+
+	if(zend_parse_parameters(ZEND_NUM_ARGS(), "r", &rsrc) == FAILURE) {
+		return;
+	}
+
+	PHPCAP_FETCH_RSRC(rsrc);
+
+	if(pcap_stats(phpcap->pcap_dev, &stats)) {
+		php_error(E_WARNING, "No stats available");
+		return;
+	}
+
+	array_init(return_value);
+	add_assoc_long(return_value, "received_packets", stats.ps_recv);
+	add_assoc_long(return_value, "dropped_packets", stats.ps_ifdrop + stats.ps_drop);
+}
+
+PHP_FUNCTION(phpcap_dispatch_break)
+{
+	zval *rsrc       = NULL;
+	phpcap_t *phpcap = NULL;
+
+	if(zend_parse_parameters(ZEND_NUM_ARGS(), "r", &rsrc) == FAILURE) {
+		return;
+	}
+
+	PHPCAP_FETCH_RSRC(rsrc);
+
+	pcap_breakloop(phpcap->pcap_dev);
+}
+
+PHP_FUNCTION(phpcap_set_direction)
+{
+	zval *rsrc       = NULL;
+	phpcap_t *phpcap = NULL;
+	long direction;
+
+	if(zend_parse_parameters(ZEND_NUM_ARGS(), "rl", &rsrc, &direction) == FAILURE) {
+		return;
+	}
+
+	PHPCAP_FETCH_RSRC(rsrc);
+
+	if(!pcap_setdirection(phpcap->pcap_dev, direction)) {
+		php_error(E_WARNING, "Could not change device direction, maybe your OS or device does not support it");
+		return;
+	}
 }
 
 PHP_FUNCTION(phpcap_findalldevs)
@@ -269,6 +337,10 @@ PHP_MINIT_FUNCTION(phpcap)
 	REGISTER_LONG_CONSTANT("PHPCAP_DEV_PROMISC", PHPCAP_DEV_PROMISC, CONST_PERSISTENT | CONST_CS);
 	REGISTER_LONG_CONSTANT("PHPCAP_DEV_RFMON", PHPCAP_DEV_RFMON, CONST_PERSISTENT | CONST_CS);
 
+	REGISTER_LONG_CONSTANT("PHPCAP_CAP_DIR_IN", PCAP_D_IN, CONST_PERSISTENT | CONST_CS);
+	REGISTER_LONG_CONSTANT("PHPCAP_CAP_DIR_OUT", PCAP_D_OUT, CONST_PERSISTENT | CONST_CS);
+	REGISTER_LONG_CONSTANT("PHPCAP_CAP_DIR_INOUT", PCAP_D_INOUT, CONST_PERSISTENT | CONST_CS);
+
 	return SUCCESS;
 }
 /* }}} */
@@ -321,10 +393,13 @@ PHP_MINFO_FUNCTION(phpcap)
  * Every user visible function must have an entry in pcap_functions[].
  */
 const zend_function_entry phpcap_functions[] = {
-	PHP_FE(phpcap_create,	arginfo_phpcap_create)		/* For testing, remove later. */
+	PHP_FE(phpcap_create,	arginfo_phpcap_create)
 	PHP_FE(phpcap_findalldevs,	NULL)
+	PHP_FE(phpcap_dispatch_break,	arginfo_phpcap_dispatch_break)
 	PHP_FE(phpcap_dispatch,	arginfo_phpcap_dispatch)
 	PHP_FE(phpcap_close,	arginfo_phpcap_close)
+	PHP_FE(phpcap_stats,	arginfo_phpcap_stats)
+	PHP_FE(phpcap_set_direction,	arginfo_phpcap_set_direction)
 	PHP_FE_END	/* Must be the last line in pcap_functions[] */
 };
 /* }}} */
