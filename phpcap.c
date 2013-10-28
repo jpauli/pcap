@@ -66,6 +66,10 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_dispatch_break, 0, 0, 1)
 	ZEND_ARG_INFO(0, rsrc)
 ZEND_END_ARG_INFO()
+ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_filter, 0, 0, 2)
+	ZEND_ARG_INFO(0, rsrc)
+	ZEND_ARG_INFO(0, filter_string)
+ZEND_END_ARG_INFO()
 
 static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, const u_char *packet)
 {
@@ -306,6 +310,41 @@ PHP_FUNCTION(phpcap_findalldevs)
 
 	pcap_freealldevs(interfaces);
 }
+
+PHP_FUNCTION(phpcap_filter)
+{
+	zval *rsrc       = NULL;
+	char *filter_string;
+	int filter_string_len;
+	phpcap_t *phpcap = NULL;
+
+	struct bpf_program fp;
+	bpf_u_int32 maskp;
+    bpf_u_int32 netp;
+
+    char errbuf[PCAP_ERRBUF_SIZE];
+
+	if(zend_parse_parameters(ZEND_NUM_ARGS(), "rs", &rsrc, &filter_string, &filter_string_len) == FAILURE) {
+		return;
+	}
+
+	PHPCAP_FETCH_RSRC(rsrc);
+
+    pcap_lookupnet(phpcap->pcap_dev,&netp,&maskp,errbuf);
+
+    if(pcap_compile(phpcap->pcap_dev,&fp,filter_string,0,netp) == -1)
+    {
+		php_error(E_WARNING, "Could not set filter, check filter syntax");
+        return;
+    }
+
+    if(pcap_setfilter(phpcap->pcap_dev,&fp) == -1)
+    {
+		php_error(E_WARNING, "Could not set filter, check filter syntax");
+		return;
+    }
+}
+
 /* }}} */
 /* The previous line is meant for vim and emacs, so it can correctly fold and 
    unfold functions in source code. See the corresponding marks just before 
@@ -400,6 +439,7 @@ const zend_function_entry phpcap_functions[] = {
 	PHP_FE(phpcap_close,	arginfo_phpcap_close)
 	PHP_FE(phpcap_stats,	arginfo_phpcap_stats)
 	PHP_FE(phpcap_set_direction,	arginfo_phpcap_set_direction)
+	PHP_FE(phpcap_filter,	arginfo_phpcap_filter)
 	PHP_FE_END	/* Must be the last line in pcap_functions[] */
 };
 /* }}} */

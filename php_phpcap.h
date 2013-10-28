@@ -68,6 +68,7 @@ PHP_FUNCTION(phpcap_dispatch);
 PHP_FUNCTION(phpcap_stats);
 PHP_FUNCTION(phpcap_dispatch_break);
 PHP_FUNCTION(phpcap_set_direction);
+PHP_FUNCTION(phpcap_filter);
 
 /* 
   	Declare any global variables you may need between the BEGIN
