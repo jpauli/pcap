@@ -49,6 +49,9 @@ $r = phpcap_create('eth0', PHPCAP_DEV_PROMISC);
 /* If your device is wireless, you could use RFMON mode as well */
 $r = phpcap_create('wlan0', PHPCAP_DEV_PROMISC | PHPCAP_DEV_RFMON);
 
+/* You can filter for certain packets */
+phpcap_filter($r, 'port 80');   // only capture packages on port 80
+
 /* Use pcap_dispatch((resource) $pcap, (callback) $function, (int) $num_of_packet)
    to call a callback on each captured packet. */
 phpcap_dispatch($r, function($rawpacket, $capture) { });
@@ -116,5 +119,6 @@ Few notes :
 * Don't expect this to work on Windows platform, thanks for not asking for support :-)
 * You may need to be root to capture device traffic
 * You should refer to http://www.tcpdump.org/pcap3_man.html
+* For an overview of filter-options refer to http://wiki.wireshark.org/CaptureFilters
 
 Code is highly under development.
