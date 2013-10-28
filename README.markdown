@@ -50,7 +50,7 @@ $r = phpcap_create('eth0', PHPCAP_DEV_PROMISC);
 $r = phpcap_create('wlan0', PHPCAP_DEV_PROMISC | PHPCAP_DEV_RFMON);
 
 /* You can filter for certain packets */
-phpcap_filter($r, 'port 80');   // only capture packages on port 80
+phpcap_filter($r, 'port 80');   // only capture packets on port 80
 
 /* Use pcap_dispatch((resource) $pcap, (callback) $function, (int) $num_of_packet)
    to call a callback on each captured packet. */
