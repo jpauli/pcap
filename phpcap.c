@@ -313,16 +313,16 @@ PHP_FUNCTION(phpcap_findalldevs)
 
 PHP_FUNCTION(phpcap_filter)
 {
-	zval *rsrc       = NULL;
+	zval *rsrc = NULL;
 	char *filter_string;
 	int filter_string_len;
 	phpcap_t *phpcap = NULL;
 
 	struct bpf_program fp;
 	bpf_u_int32 maskp;
-    bpf_u_int32 netp;
+	bpf_u_int32 netp;
 
-    char errbuf[PCAP_ERRBUF_SIZE];
+	char errbuf[PCAP_ERRBUF_SIZE];
 
 	if(zend_parse_parameters(ZEND_NUM_ARGS(), "rs", &rsrc, &filter_string, &filter_string_len) == FAILURE) {
 		return;
@@ -330,19 +330,19 @@ PHP_FUNCTION(phpcap_filter)
 
 	PHPCAP_FETCH_RSRC(rsrc);
 
-    pcap_lookupnet(phpcap->pcap_dev,&netp,&maskp,errbuf);
+	pcap_lookupnet(phpcap->pcap_dev,&netp,&maskp,errbuf);
 
-    if(pcap_compile(phpcap->pcap_dev,&fp,filter_string,0,netp) == -1)
-    {
-		php_error(E_WARNING, "Could not set filter, check filter syntax");
-        return;
-    }
-
-    if(pcap_setfilter(phpcap->pcap_dev,&fp) == -1)
-    {
+	if(pcap_compile(phpcap->pcap_dev,&fp,filter_string,0,netp) == -1)
+	{
 		php_error(E_WARNING, "Could not set filter, check filter syntax");
 		return;
-    }
+	}
+
+	if(pcap_setfilter(phpcap->pcap_dev,&fp) == -1)
+	{
+		php_error(E_WARNING, "Could not set filter, check filter syntax");
+		return;
+	}
 }
 
 /* }}} */
