@@ -49,15 +49,17 @@ $r = phpcap_create('eth0', PHPCAP_DEV_PROMISC);
 /* If your device is wireless, you could use RFMON mode as well */
 $r = phpcap_create('wlan0', PHPCAP_DEV_PROMISC | PHPCAP_DEV_RFMON);
 
-/* You can filter for certain packets */
-phpcap_filter($r, 'port 80');   // only capture packets on port 80
+/* You can set a filter for certain packets 
+   Filter will be set for every future dispatch() call
+   Filter syntax is pcap syntax, have a look at tcpdump man page for more info */
+phpcap_setfilter($r, 'port 80');   // only capture packets on port 80
 
 /* Use pcap_dispatch((resource) $pcap, (callback) $function, (int) $num_of_packet)
    to call a callback on each captured packet. */
 phpcap_dispatch($r, function($rawpacket, $capture) { });
 
 /* Use the last parameter to limit the number of packets to capture.
-   The phpcap_dispatch() return TRUE on success, FALSE otherwise */
+   The phpcap_dispatch() returns TRUE on success, FALSE otherwise */
 phpcap_dispatch($r, function($rawpacket, $capture) { }, 150);
 
 /* The callback is passed the raw packet as first argument, you can play with raw data : */
@@ -94,6 +96,9 @@ array(4) {
   string(13) "101.46.99.111"
 }
 */
+
+/* You can reset a filter you previously set */
+phpcap_resetfilter($r);
 
 /* If you want to exit the callback, use phpcap_dispatch_break((resource) $pcap); */
 phpcap_dispatch($r, function($packet, $cap) use ($r) { var_dump($cap); if(/*something*/) { phpcap_dispatch_break($r); }});

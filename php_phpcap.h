@@ -53,6 +53,7 @@ extern zend_module_entry phpcap_module_entry;
 typedef struct _phpcap_t {
 	pcap_t *pcap_dev;
 	long options;
+	char *device_name;
 } phpcap_t;
 
 typedef struct ether_header ether_header;
@@ -68,7 +69,8 @@ PHP_FUNCTION(phpcap_dispatch);
 PHP_FUNCTION(phpcap_stats);
 PHP_FUNCTION(phpcap_dispatch_break);
 PHP_FUNCTION(phpcap_set_direction);
-PHP_FUNCTION(phpcap_filter);
+PHP_FUNCTION(phpcap_setfilter);
+PHP_FUNCTION(phpcap_resetfilter);
 
 /* 
   	Declare any global variables you may need between the BEGIN

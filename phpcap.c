@@ -66,9 +66,12 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_dispatch_break, 0, 0, 1)
 	ZEND_ARG_INFO(0, rsrc)
 ZEND_END_ARG_INFO()
-ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_filter, 0, 0, 2)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_setfilter, 0, 0, 2)
 	ZEND_ARG_INFO(0, rsrc)
 	ZEND_ARG_INFO(0, filter_string)
+ZEND_END_ARG_INFO()
+ZEND_BEGIN_ARG_INFO_EX(arginfo_phpcap_resetfilter, 0, 0, 1)
+	ZEND_ARG_INFO(0, rsrc)
 ZEND_END_ARG_INFO()
 
 static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, const u_char *packet)
@@ -96,7 +99,7 @@ static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, co
 	add_assoc_string(param_cap, "source_host", ether_ntoa((const struct ether_addr *)ethernet->ether_shost), 1);
 	add_assoc_string(param_cap, "destination_host", ether_ntoa((const struct ether_addr *)ethernet->ether_dhost), 1);
 
-	if(ntohs(ethernet->ether_type) == ETHERTYPE_IP) {
+	if (ntohs(ethernet->ether_type) == ETHERTYPE_IP) {
 		add_assoc_string(param_cap, "destination_ip", (char*)inet_ntop(AF_INET, &ip->ip_dst, out, sizeof(out)), 1);
 		add_assoc_string(param_cap, "source_ip", (char*)inet_ntop(AF_INET, &ip->ip_src, out, sizeof(out)), 1);
 	}
@@ -110,7 +113,7 @@ static void pcap_dispatch_cb(u_char *cargs, const struct pcap_pkthdr *header, co
 
 	zend_call_function(fci, fcic);
 
-	if(fci->retval_ptr_ptr) {
+	if (fci->retval_ptr_ptr) {
 		zval_ptr_dtor(fci->retval_ptr_ptr);
 	}
 	zval_ptr_dtor(&param_packet);
@@ -122,9 +125,35 @@ static void phpcap_rsrc_dtor(zend_rsrc_list_entry *rsrc)
 {
 	phpcap_t *phpcap = (phpcap_t *)rsrc->ptr;
 
-	if(phpcap) {
+	if (phpcap) {
 		pcap_close(phpcap->pcap_dev);
+		efree(phpcap->device_name);
 		efree(phpcap);
+	}
+}
+
+static void phpcap_set_filter(phpcap_t *phpcap, const char *filter_string)
+{
+	struct bpf_program fp;
+	bpf_u_int32 maskp;
+	bpf_u_int32 netp;
+
+	char errbuf[PCAP_ERRBUF_SIZE];
+
+	if (pcap_lookupnet(phpcap->device_name, &netp, &maskp, errbuf) == -1) {
+		php_error(E_WARNING, "Error in lookupnet : %s", errbuf);
+		return;
+	}
+
+	if (pcap_compile(phpcap->pcap_dev, &fp, filter_string, 0, netp) == -1) {
+		php_error(E_WARNING, "Could not compile filter syntax");
+		return;
+	}
+
+	if (pcap_setfilter(phpcap->pcap_dev,&fp) == -1) {
+		php_error(E_WARNING, "Could not set filter, check filter syntax");
+		pcap_freecode(&fp);
+		return;
 	}
 }
 
@@ -133,7 +162,7 @@ PHP_FUNCTION(phpcap_close)
 	zval *rsrc       = NULL;
 	phpcap_t *phpcap = NULL;
 
-	if(zend_parse_parameters(ZEND_NUM_ARGS(), "r", &rsrc) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "r", &rsrc) == FAILURE) {
 		return;
 	}
 
@@ -162,11 +191,12 @@ PHP_FUNCTION(phpcap_create)
 		return;
 	}
 
-	if(options & PHPCAP_DEV_RFMON) {
+	if (options & PHPCAP_DEV_RFMON) {
 		/* use pcap_can_set_rfmon(); to probe ? */
 		pcap_set_rfmon(pcap_dev, 1);
 	}
-	if(options & PHPCAP_DEV_PROMISC) {
+
+	if (options & PHPCAP_DEV_PROMISC) {
 		pcap_set_promisc(pcap_dev, 1);
 	}
 
@@ -183,8 +213,11 @@ PHP_FUNCTION(phpcap_create)
 	}
 
 	phpcap = (phpcap_t *) emalloc(sizeof(phpcap_t));
-	phpcap->pcap_dev  = pcap_dev;
-	phpcap->options   = options;
+	phpcap->pcap_dev    = pcap_dev;
+	phpcap->options     = options;
+	phpcap->device_name = (char *)emalloc(iface_len + 1);
+	strncpy(phpcap->device_name, iface, iface_len);
+	phpcap->device_name[iface_len] = '\0';
 
 	ZEND_REGISTER_RESOURCE(return_value, phpcap, le_phpcap);
 }
@@ -227,13 +260,13 @@ PHP_FUNCTION(phpcap_stats)
 	phpcap_t *phpcap = NULL;
 	struct pcap_stat stats;
 
-	if(zend_parse_parameters(ZEND_NUM_ARGS(), "r", &rsrc) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "r", &rsrc) == FAILURE) {
 		return;
 	}
 
 	PHPCAP_FETCH_RSRC(rsrc);
 
-	if(pcap_stats(phpcap->pcap_dev, &stats)) {
+	if (pcap_stats(phpcap->pcap_dev, &stats)) {
 		php_error(E_WARNING, "No stats available");
 		return;
 	}
@@ -248,7 +281,7 @@ PHP_FUNCTION(phpcap_dispatch_break)
 	zval *rsrc       = NULL;
 	phpcap_t *phpcap = NULL;
 
-	if(zend_parse_parameters(ZEND_NUM_ARGS(), "r", &rsrc) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "r", &rsrc) == FAILURE) {
 		return;
 	}
 
@@ -263,13 +296,13 @@ PHP_FUNCTION(phpcap_set_direction)
 	phpcap_t *phpcap = NULL;
 	long direction;
 
-	if(zend_parse_parameters(ZEND_NUM_ARGS(), "rl", &rsrc, &direction) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "rl", &rsrc, &direction) == FAILURE) {
 		return;
 	}
 
 	PHPCAP_FETCH_RSRC(rsrc);
 
-	if(!pcap_setdirection(phpcap->pcap_dev, direction)) {
+	if (!pcap_setdirection(phpcap->pcap_dev, direction)) {
 		php_error(E_WARNING, "Could not change device direction, maybe your OS or device does not support it");
 		return;
 	}
@@ -288,7 +321,7 @@ PHP_FUNCTION(phpcap_findalldevs)
 
 	array_init(return_value);
 
-	if(!interfaces) {
+	if (!interfaces) {
 		php_error(E_NOTICE, "No interface found, perhaps you need to be root ?");
 		return;
 	}
@@ -311,38 +344,35 @@ PHP_FUNCTION(phpcap_findalldevs)
 	pcap_freealldevs(interfaces);
 }
 
-PHP_FUNCTION(phpcap_filter)
+PHP_FUNCTION(phpcap_setfilter)
 {
 	zval *rsrc = NULL;
 	char *filter_string;
 	int filter_string_len;
 	phpcap_t *phpcap = NULL;
 
-	struct bpf_program fp;
-	bpf_u_int32 maskp;
-	bpf_u_int32 netp;
-
-	char errbuf[PCAP_ERRBUF_SIZE];
-
-	if(zend_parse_parameters(ZEND_NUM_ARGS(), "rs", &rsrc, &filter_string, &filter_string_len) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "rs", &rsrc, &filter_string, &filter_string_len) == FAILURE) {
 		return;
 	}
 
 	PHPCAP_FETCH_RSRC(rsrc);
 
-	pcap_lookupnet(phpcap->pcap_dev,&netp,&maskp,errbuf);
+	phpcap_set_filter(phpcap, (const char *)filter_string);
+}
 
-	if(pcap_compile(phpcap->pcap_dev,&fp,filter_string,0,netp) == -1)
-	{
-		php_error(E_WARNING, "Could not set filter, check filter syntax");
+PHP_FUNCTION(phpcap_resetfilter)
+{
+	zval *rsrc       = NULL;
+	phpcap_t *phpcap = NULL;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "r", &rsrc) == FAILURE) {
 		return;
 	}
 
-	if(pcap_setfilter(phpcap->pcap_dev,&fp) == -1)
-	{
-		php_error(E_WARNING, "Could not set filter, check filter syntax");
-		return;
-	}
+	PHPCAP_FETCH_RSRC(rsrc);
+
+	phpcap_set_filter(phpcap, "");
+
 }
 
 /* }}} */
@@ -439,7 +469,8 @@ const zend_function_entry phpcap_functions[] = {
 	PHP_FE(phpcap_close,	arginfo_phpcap_close)
 	PHP_FE(phpcap_stats,	arginfo_phpcap_stats)
 	PHP_FE(phpcap_set_direction,	arginfo_phpcap_set_direction)
-	PHP_FE(phpcap_filter,	arginfo_phpcap_filter)
+	PHP_FE(phpcap_setfilter,	arginfo_phpcap_setfilter)
+	PHP_FE(phpcap_resetfilter,	arginfo_phpcap_resetfilter)
 	PHP_FE_END	/* Must be the last line in pcap_functions[] */
 };
 /* }}} */
